@@ -39,6 +39,7 @@
   },
   "search": {
     "action": "Search",
+    "global_action": "Search",
     "ime_title": "Enter search query",
     "ime_subtitle": "Video or channel",
     "prompt": "Press X to search",
@@ -105,6 +106,7 @@
       "saved": "Saved playback quality",
       "options": {
         "standard": "Standard 720p",
+        "high": "High 1080p",
         "compatibility": "Compatibility First",
         "data_saver": "Data Saver"
       }
@@ -176,7 +178,20 @@
     "comments_load_failed": "Unable to load comments",
     "favorite_save_failed": "Failed to save favorite",
     "favorite_added": "Added to favorites",
-    "favorite_removed": "Removed from favorites"
+    "favorite_removed": "Removed from favorites",
+    "like_action": "Like",
+    "subscribe_action": "Subscribe",
+    "post_comment_action": "Post comment",
+    "account": {
+      "sign_in_required": "Sign in first: Settings ▸ Login session",
+      "action_failed": "Action failed. Try again.",
+      "liked": "Liked",
+      "subscribed": "Subscribed",
+      "comment_posted": "Comment posted",
+      "no_channel": "No channel found for this video",
+      "comment_ime_title": "Write a comment",
+      "comment_ime_subtitle": "Posts to your signed-in account"
+    }
   },
   "feed": {
     "subtitle": "A Play • Y Details • B Back"
@@ -196,7 +211,7 @@
       "playing": "PLAYING",
       "volume": "VOL"
     },
-    "osd_controls": "A PAUSE  B BACK  X Y OSD  UP DOWN VOL",
+    "osd_controls": "A EXIT  B PAUSE  X Y OSD  PLUS MENU  UP DOWN VOL",
     "osd": {
       "auto": "OSD AUTO",
       "locked": "OSD LOCKED",
@@ -204,6 +219,21 @@
       "audio_attach_failed": "AUDIO ATTACH FAILED",
       "playback_ready": "PLAYBACK READY",
       "volume": "VOLUME {}"
+    },
+    "menu": {
+      "title": "Player settings",
+      "subtitles": "Subtitles",
+      "audio_track": "Audio track",
+      "quality": "Quality",
+      "close": "Close",
+      "off": "Off",
+      "on": "On",
+      "none": "None",
+      "auto": "Auto",
+      "no_subtitles": "No subtitles available",
+      "quality_locked": "No other quality available",
+      "switch_lower": "switch",
+      "hint": "Up Down move   A select   Plus close"
     },
     "loading": {
       "preparing_playback": "PREPARING PLAYBACK",
@@ -233,7 +263,8 @@
       "contacting_player_api": "CONTACTING PLAYER API",
       "selecting_playable_format": "SELECTING PLAYABLE FORMAT",
       "requesting_720p_hls_stream": "REQUESTING 720P HLS STREAM",
-      "requesting_720p_avc_stream": "REQUESTING 720P AVC STREAM"
+      "requesting_720p_avc_stream": "REQUESTING 720P AVC STREAM",
+      "requesting_1080p_stream": "REQUESTING 1080P STREAM"
     }
   },
   "stream": {

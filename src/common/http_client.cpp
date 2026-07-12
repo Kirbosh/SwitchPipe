@@ -6,6 +6,9 @@
 
 #include "newpipe/log.hpp"
 #ifdef __SWITCH__
+#include <array>
+#include <mutex>
+
 #include <curl/curl.h>
 #else
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -14,6 +17,53 @@
 
 namespace newpipe {
 namespace {
+
+#ifdef __SWITCH__
+// A process-wide CURL share handle lets independent easy handles reuse pooled
+// TCP/TLS connections, the DNS cache, and TLS sessions. Reusing a warm HTTPS
+// connection to youtube.com/googlevideo.com removes a full TLS handshake from
+// every page load, which is the main source of tab-to-tab latency.
+std::array<std::mutex, CURL_LOCK_DATA_LAST> g_share_mutexes;
+
+void share_lock(CURL*, curl_lock_data data, curl_lock_access, void*) {
+    if (data < CURL_LOCK_DATA_LAST) {
+        g_share_mutexes[data].lock();
+    }
+}
+
+void share_unlock(CURL*, curl_lock_data data, void*) {
+    if (data < CURL_LOCK_DATA_LAST) {
+        g_share_mutexes[data].unlock();
+    }
+}
+
+CURLSH* shared_curl_handle() {
+    static CURLSH* share = []() -> CURLSH* {
+        CURLSH* handle = curl_share_init();
+        if (!handle) {
+            return nullptr;
+        }
+        curl_share_setopt(handle, CURLSHOPT_LOCKFUNC, share_lock);
+        curl_share_setopt(handle, CURLSHOPT_UNLOCKFUNC, share_unlock);
+        curl_share_setopt(handle, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+        curl_share_setopt(handle, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+        curl_share_setopt(handle, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+        return handle;
+    }();
+    return share;
+}
+
+// Shared tuning applied to every easy handle: connection reuse, gzip, HTTP/2.
+void apply_shared_transfer_options(CURL* curl) {
+    if (CURLSH* share = shared_curl_handle()) {
+        curl_easy_setopt(curl, CURLOPT_SHARE, share);
+    }
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 30L);
+}
+#endif
 
 struct ParsedUrl {
     std::string scheme;
@@ -89,6 +139,7 @@ std::optional<std::string> HttpsHttpClient::get(
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    apply_shared_transfer_options(curl);
 
     const CURLcode result = curl_easy_perform(curl);
     long status_code = 0;
@@ -172,6 +223,7 @@ std::optional<std::string> HttpsHttpClient::post(
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    apply_shared_transfer_options(curl);
 
     const CURLcode result = curl_easy_perform(curl);
     long status_code = 0;

@@ -2,6 +2,7 @@
 
 #include <borealis.hpp>
 
+#include "newpipe/youtube_catalog_service.hpp"
 #include "view/auto_tab_frame.hpp"
 
 class MainActivity : public brls::Activity {
@@ -11,5 +12,9 @@ public:
     void onContentAvailable() override;
 
 private:
+    void openGlobalSearch();
+
+    newpipe::YouTubeCatalogService service_;
+
     BRLS_BIND(AutoTabFrame, tabsFrame, "main/tabs");
 };

@@ -79,7 +79,6 @@ private:
     mutable std::unordered_map<std::string, HomeFeed> channel_feed_cache_;
     mutable std::unordered_map<std::string, HomeFeed> playlist_feed_cache_;
     mutable std::unordered_map<std::string, HomeFeed> authenticated_browse_cache_;
-    mutable std::unordered_map<std::string, StreamDetail> detail_cache_;
     mutable std::unordered_map<std::string, CommentPage> comments_cache_;
     mutable std::string error_message_;
 };
