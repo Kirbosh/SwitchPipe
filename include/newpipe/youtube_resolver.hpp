@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "newpipe/http_client.hpp"
 #include "newpipe/throttling_decrypter.hpp"
@@ -13,6 +14,14 @@ enum class PlaybackQualityMode {
     STANDARD_720 = 0,
     COMPATIBILITY = 1,
     DATA_SAVER = 2,
+    HIGH_1080 = 3,
+};
+
+struct SubtitleTrack {
+    std::string language_code;
+    std::string display_name;
+    std::string url;
+    bool is_auto_generated = false;
 };
 
 struct ResolvedPlayback {
@@ -29,6 +38,7 @@ struct ResolvedPlayback {
     std::string fallback_http_header_fields;
     std::string fallback_quality_label;
     std::string fallback_external_audio_url;
+    std::vector<SubtitleTrack> subtitles;
     bool is_live = false;
 };
 
@@ -58,6 +68,7 @@ private:
     HttpsHttpClient owned_client_;
     HttpClient* client_ = nullptr;
     ThrottlingDecrypter throttle_decrypter_;
+    std::vector<SubtitleTrack> resolved_subtitles_;
 };
 
 }  // namespace newpipe

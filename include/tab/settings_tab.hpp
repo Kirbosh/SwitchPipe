@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <borealis.hpp>
 
 class SettingsTab : public brls::Box {
@@ -13,6 +15,7 @@ private:
     void syncFromStore();
     void resetToDefaults();
     void openSessionInfo();
+    void handleCookieInput(const std::string& text);
     void openStorageInfo();
 
     BRLS_BIND(brls::SelectorCell, languageCell, "settings/language");

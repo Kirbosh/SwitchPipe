@@ -1,5 +1,25 @@
 # Handoff
 
+## 2026-07 업데이트: YouTube 기능 확장
+
+이번 라운드에서 추가/변경한 것:
+
+- **1080p 재생**: `youtube_resolver`에 `PlaybackQualityMode::HIGH_1080` 추가. 1080p AVC video-only 스트림 + 외부 audio 스트림을 기존 stream bridge/audio prefetch 경로로 재생. 1080p AVC가 없으면 720p HLS로 자동 fallback. 설정 탭에 "고화질 1080p" 옵션 추가.
+- **플레이어 내 설정 메뉴** (`+` / Plus): 자막 선택, 오디오 트랙 순환, 화질 낮추기(fallback). 기존 OSD 비트맵 폰트/`fill_rect`로 렌더링. 스위치 물리 A/B 매핑(SDL_A=아래=닌텐도 B, SDL_B=오른쪽=닌텐도 A)에 맞춰 A 선택 / B·+ 닫기.
+- **자막**: player response의 `captions.playerCaptionsTracklistRenderer.captionTracks`를 파싱해 `ResolvedPlayback.subtitles`로 전달, mpv `sub-add`/`set sid`로 전환.
+- **좋아요 / 구독 / 댓글**: `account_actions`(신규)에서 innertube `like/like`·`subscription/subscribe`·`comment/create_comment`를 SAPISIDHASH 인증으로 호출. 상세 화면 `LB 더보기` 메뉴에서 진입. 댓글은 watch page의 `createCommentParams` 필요.
+- **설정 탭 로그인 세션 관리**: 기존 구독 탭 RB 흐름을 설정 탭 `로그인 세션` 셀에서도 사용 가능(파일 불러오기 / 쿠키 붙여넣기 / 로그아웃).
+- **전역 검색**: `MainActivity`에 `ZL` 전역 액션 추가 → IME → `StreamFeedActivity`로 결과. 모든 탭에서 검색 가능.
+- **속도**: `http_client`에 curl `CURLSH`(connection/DNS/TLS 세션 공유) + gzip + HTTP/2 적용. stream detail 캐시를 프로세스 전역(static)으로 승격해 재생 후 Borealis 재시작 시에도 재사용.
+
+### 실기 검증 필요 (네트워크 정책상 개발 환경에서 live 검증 불가, host 컴파일만 확인됨)
+
+- 1080p 실기 디코드/재생 안정성 (Tegra AVC 1080p)
+- 플레이어 설정 메뉴 입력/렌더 (특히 A/B/Plus 매핑, 자막 sub-add)
+- 좋아요 / 구독 / 댓글 실계정 동작
+- 전역 `ZL` 검색이 탭 내부 포커스에서도 발동하는지
+- keep-alive/gzip 적용 후 페이지 전환 체감 속도
+
 ## 현재 상태 (2026-04-06)
 
 `Switch-NewPipe`는 이제 단순 스캐폴드가 아니라, 실제 YouTube 데이터 탐색과 실기 재생 루프까지 연결된 Switch MVP다.

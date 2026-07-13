@@ -43,8 +43,12 @@
 - [x] 실기에서 실제 YouTube 영상 재생 확인
 - [ ] 720p 경로 실기 안정화
 - [ ] 좌우 seek 복구
-- [ ] 재생 중 OSD
-- [ ] 화질 수동 선택
+- [x] 재생 중 OSD
+- [x] 화질 수동 선택 (플레이어 내 설정 메뉴, `+` 버튼)
+- [x] 1080p 재생 (adaptive AVC video + 외부 audio)
+- [x] 자막 트랙 선택 (caption 기반)
+- [x] 오디오 트랙 순환 (다국어 더빙)
+- [ ] 1080p / 자막 / 오디오 트랙 실기 검증
 
 ## Phase 3: 앱다운 기능
 
@@ -62,8 +66,17 @@
 - [ ] 댓글 / 재생목록 pagination
 - [ ] 개인화 홈 추천 고도화
 
+## Phase 5: 계정 상호작용 / 접근성
+
+- [x] 좋아요 / 구독 / 댓글 작성 (innertube like·subscription·comment endpoint)
+- [x] 설정 탭에서 로그인 세션 관리 (파일 불러오기 / 쿠키 붙여넣기 / 로그아웃)
+- [x] 전역 검색 (모든 탭에서 `ZL`)
+- [x] HTTP keep-alive + gzip + 공용 detail 캐시로 페이지 전환 지연 감소
+- [ ] 좋아요 / 구독 / 댓글 실기 검증
+- [ ] 상태 반영 (좋아요/구독 여부 표시)
+
 ## 후순위
 
-- [ ] 앱 내부 Google OAuth / WebView 로그인
+- [ ] 앱 내부 Google OAuth / WebView 로그인 (쿠키 import로 대체 중)
 - [ ] 멀티뷰
 - [ ] 다운로드

@@ -33,10 +33,12 @@ int playback_quality_selection(newpipe::PlaybackQualityMode mode) {
     switch (mode) {
         case newpipe::PlaybackQualityMode::STANDARD_720:
             return 0;
-        case newpipe::PlaybackQualityMode::COMPATIBILITY:
+        case newpipe::PlaybackQualityMode::HIGH_1080:
             return 1;
-        case newpipe::PlaybackQualityMode::DATA_SAVER:
+        case newpipe::PlaybackQualityMode::COMPATIBILITY:
             return 2;
+        case newpipe::PlaybackQualityMode::DATA_SAVER:
+            return 3;
         default:
             return 0;
     }
@@ -45,8 +47,10 @@ int playback_quality_selection(newpipe::PlaybackQualityMode mode) {
 newpipe::PlaybackQualityMode playback_quality_from_selection(int selection) {
     switch (selection) {
         case 1:
-            return newpipe::PlaybackQualityMode::COMPATIBILITY;
+            return newpipe::PlaybackQualityMode::HIGH_1080;
         case 2:
+            return newpipe::PlaybackQualityMode::COMPATIBILITY;
+        case 3:
             return newpipe::PlaybackQualityMode::DATA_SAVER;
         default:
             return newpipe::PlaybackQualityMode::STANDARD_720;
@@ -146,6 +150,7 @@ SettingsTab::SettingsTab() {
         newpipe::tr("settings/playback_quality/title"),
         {
             newpipe::tr("settings/playback_quality/options/standard"),
+            newpipe::tr("settings/playback_quality/options/high"),
             newpipe::tr("settings/playback_quality/options/compatibility"),
             newpipe::tr("settings/playback_quality/options/data_saver"),
         },
@@ -298,11 +303,12 @@ void SettingsTab::openSessionInfo() {
     std::string error;
     newpipe::AuthStore::instance().load(&error);
     const auto session = newpipe::AuthStore::instance().session();
+    const bool signed_in = newpipe::AuthStore::instance().has_session();
 
     std::string body;
     if (!error.empty()) {
         body = newpipe::tr("settings/session/dialog/load_failed", error);
-    } else if (!newpipe::AuthStore::instance().has_session()) {
+    } else if (!signed_in) {
         body = newpipe::tr("settings/session/dialog/signed_out");
     } else {
         body = newpipe::tr(
@@ -315,9 +321,64 @@ void SettingsTab::openSessionInfo() {
     }
 
     auto* dialog = new brls::Dialog(body);
+
+    dialog->addButton(newpipe::tr("subscriptions/session_dialog/load_file"), [this, dialog]() {
+        dialog->close();
+        std::string import_error;
+        if (newpipe::AuthStore::instance().import_from_file({}, &import_error)) {
+            brls::Application::notify(newpipe::tr("subscriptions/session_dialog/load_file_done"));
+        } else {
+            brls::Application::notify(
+                import_error.empty() ? newpipe::tr("subscriptions/session_dialog/load_file_failed")
+                                     : import_error);
+        }
+        this->syncFromStore();
+    });
+
+    dialog->addButton(newpipe::tr("subscriptions/session_dialog/input_cookie"), [this, dialog]() {
+        dialog->close();
+        brls::Application::getImeManager()->openForText(
+            [this](const std::string& text) { this->handleCookieInput(text); },
+            newpipe::tr("subscriptions/session_dialog/ime_title"),
+            newpipe::tr("subscriptions/session_dialog/ime_subtitle"),
+            4096,
+            "");
+    });
+
+    if (signed_in) {
+        dialog->addButton(newpipe::tr("subscriptions/session_dialog/logout"), [this, dialog]() {
+            dialog->close();
+            std::string clear_error;
+            if (newpipe::AuthStore::instance().clear(&clear_error)) {
+                brls::Application::notify(newpipe::tr("subscriptions/session_dialog/logout_done"));
+            } else {
+                brls::Application::notify(
+                    clear_error.empty() ? newpipe::tr("subscriptions/session_dialog/logout_failed")
+                                        : clear_error);
+            }
+            this->syncFromStore();
+        });
+    }
+
     dialog->addButton(newpipe::tr("common/close"), [dialog]() { dialog->close(); });
     dialog->setCancelable(true);
     dialog->open();
+}
+
+void SettingsTab::handleCookieInput(const std::string& text) {
+    if (text.empty()) {
+        brls::Application::notify(newpipe::tr("subscriptions/session_dialog/empty_input"));
+        return;
+    }
+
+    std::string error;
+    if (newpipe::AuthStore::instance().update_from_cookie_header(text, "manual input", &error)) {
+        brls::Application::notify(newpipe::tr("subscriptions/session_dialog/save_cookie_done"));
+    } else {
+        brls::Application::notify(
+            error.empty() ? newpipe::tr("subscriptions/session_dialog/save_cookie_failed") : error);
+    }
+    this->syncFromStore();
 }
 
 void SettingsTab::openStorageInfo() {

@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -17,6 +19,20 @@ namespace newpipe {
 namespace {
 
 using nlohmann::json;
+
+// Stream details (title, channel, description, related list) are immutable per
+// video, so we cache them process-wide. This survives the Borealis teardown that
+// happens on every playback, making re-entry into Home/Search/Detail instant
+// instead of re-hitting the player API after each video.
+std::unordered_map<std::string, StreamDetail>& detail_cache_store() {
+    static std::unordered_map<std::string, StreamDetail> cache;
+    return cache;
+}
+
+std::mutex& detail_cache_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
 
 constexpr const char* kSearchApiUrl = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false";
 constexpr const char* kBrowseApiUrl = "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false";
@@ -1332,9 +1348,12 @@ std::optional<StreamDetail> YouTubeCatalogService::fetch_stream_detail_from_play
     }
 
     StreamDetail detail;
-    const auto cached_it = this->detail_cache_.find(url);
-    if (cached_it != this->detail_cache_.end()) {
-        detail = cached_it->second;
+    {
+        std::lock_guard<std::mutex> lock(detail_cache_mutex());
+        const auto cached_it = detail_cache_store().find(url);
+        if (cached_it != detail_cache_store().end()) {
+            detail = cached_it->second;
+        }
     }
 
     const json video_details = root.value("videoDetails", json::object());
@@ -1729,31 +1748,36 @@ SearchResults YouTubeCatalogService::search(const std::string& query) const {
 }
 
 std::optional<StreamDetail> YouTubeCatalogService::get_stream_detail(const std::string& url) const {
-    const auto it = detail_cache_.find(url);
-    if (it != detail_cache_.end()
-        && (!it->second.description.empty() || !it->second.related_items.empty()
-            || !it->second.item.channel_id.empty())) {
-        error_message_.clear();
-        return it->second;
+    {
+        std::lock_guard<std::mutex> lock(detail_cache_mutex());
+        const auto it = detail_cache_store().find(url);
+        if (it != detail_cache_store().end()
+            && (!it->second.description.empty() || !it->second.related_items.empty()
+                || !it->second.item.channel_id.empty())) {
+            error_message_.clear();
+            return it->second;
+        }
     }
 
     return this->fetch_stream_detail_from_player(url);
 }
 
 void YouTubeCatalogService::cache_stream_details(const std::vector<StreamItem>& items) const {
+    std::lock_guard<std::mutex> lock(detail_cache_mutex());
     for (const auto& item : items) {
         StreamDetail detail;
-        const auto it = this->detail_cache_.find(item.url);
-        if (it != this->detail_cache_.end()) {
+        const auto it = detail_cache_store().find(item.url);
+        if (it != detail_cache_store().end()) {
             detail = it->second;
         }
         detail.item = item;
-        this->detail_cache_[item.url] = detail;
+        detail_cache_store()[item.url] = detail;
     }
 }
 
 void YouTubeCatalogService::cache_stream_detail(const StreamDetail& detail) const {
-    this->detail_cache_[detail.item.url] = detail;
+    std::lock_guard<std::mutex> lock(detail_cache_mutex());
+    detail_cache_store()[detail.item.url] = detail;
 }
 
 void YouTubeCatalogService::invalidate_auth_caches() {

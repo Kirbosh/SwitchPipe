@@ -45,6 +45,27 @@ std::string get_string(const json& node, const char* key) {
     return {};
 }
 
+std::string get_text(const json& node) {
+    if (node.is_string()) {
+        return node.get<std::string>();
+    }
+
+    if (node.is_object()) {
+        if (node.contains("simpleText") && node.at("simpleText").is_string()) {
+            return node.at("simpleText").get<std::string>();
+        }
+        if (node.contains("runs") && node.at("runs").is_array()) {
+            std::string text;
+            for (const auto& run : node.at("runs")) {
+                text += get_string(run, "text");
+            }
+            return text;
+        }
+    }
+
+    return {};
+}
+
 std::optional<std::string> find_query_value(const std::string& url, const std::string& key) {
     const std::string pattern = key + "=";
     size_t search_from = 0;
@@ -626,6 +647,53 @@ std::optional<ResolvedPlayback> resolve_ios_hls_playback(
     return result;
 }
 
+std::vector<SubtitleTrack> extract_subtitle_tracks(const json& root) {
+    std::vector<SubtitleTrack> tracks;
+    const json caption_tracks = root.value("captions", json::object())
+                                    .value("playerCaptionsTracklistRenderer", json::object())
+                                    .value("captionTracks", json::array());
+    if (!caption_tracks.is_array()) {
+        return tracks;
+    }
+
+    for (const auto& track : caption_tracks) {
+        if (!track.is_object()) {
+            continue;
+        }
+
+        SubtitleTrack subtitle;
+        subtitle.url = get_string(track, "baseUrl");
+        if (subtitle.url.empty()) {
+            continue;
+        }
+
+        // Request WebVTT so mpv can consume it directly.
+        subtitle.url += (subtitle.url.find('?') == std::string::npos ? "?" : "&");
+        subtitle.url += "fmt=vtt";
+
+        subtitle.language_code = get_string(track, "languageCode");
+        subtitle.display_name = get_text(track.value("name", json::object()));
+        if (subtitle.display_name.empty()) {
+            subtitle.display_name = subtitle.language_code;
+        }
+        subtitle.is_auto_generated = get_string(track, "kind") == "asr"
+            || to_lower(subtitle.display_name).find("auto") != std::string::npos;
+
+        tracks.push_back(std::move(subtitle));
+    }
+
+    // Put a plain (non-auto) English/original track first so the default pick is useful.
+    std::stable_sort(tracks.begin(), tracks.end(), [](const SubtitleTrack& a, const SubtitleTrack& b) {
+        const int score_a = (a.is_auto_generated ? 2 : 0)
+            + (a.language_code.rfind("en", 0) == 0 ? 0 : 1);
+        const int score_b = (b.is_auto_generated ? 2 : 0)
+            + (b.language_code.rfind("en", 0) == 0 ? 0 : 1);
+        return score_a < score_b;
+    });
+
+    return tracks;
+}
+
 void report_status(const ResolverStatusCallback& callback, const std::string& title, const std::string& detail) {
     if (callback) {
         callback(title, detail);
@@ -658,8 +726,12 @@ std::optional<ResolvedPlayback> YouTubeResolver::resolve(
     const std::string& url,
     std::string& error_message,
     ResolverStatusCallback on_status) {
+    resolved_subtitles_.clear();
     auto result = resolve_internal(url, error_message, on_status);
     if (result.has_value()) {
+        if (result->subtitles.empty()) {
+            result->subtitles = resolved_subtitles_;
+        }
         apply_throttle_transform(*result);
     }
     return result;
@@ -677,12 +749,17 @@ std::optional<ResolvedPlayback> YouTubeResolver::resolve_internal(
 
     report_status(on_status, "RESOLVING YOUTUBE STREAM", "CONTACTING PLAYER API");
     const AppSettings settings = SettingsStore::instance().settings();
+    const bool prefer_high_1080 =
+        settings.playback_quality == PlaybackQualityMode::HIGH_1080;
     const int preferred_height =
-        settings.playback_quality == PlaybackQualityMode::DATA_SAVER ? 480 : 720;
+        settings.playback_quality == PlaybackQualityMode::DATA_SAVER ? 480
+        : prefer_high_1080 ? 1080
+                           : 720;
     const bool prefer_progressive_first =
         settings.playback_quality == PlaybackQualityMode::COMPATIBILITY;
     const bool allow_adaptive_720 =
-        settings.playback_quality == PlaybackQualityMode::STANDARD_720;
+        settings.playback_quality == PlaybackQualityMode::STANDARD_720
+        || prefer_high_1080;
 
     const auto root = fetch_player_response(
         client_,
@@ -706,6 +783,13 @@ std::optional<ResolvedPlayback> YouTubeResolver::resolve_internal(
         return std::nullopt;
     }
 
+    resolved_subtitles_ = extract_subtitle_tracks(*root);
+    if (!resolved_subtitles_.empty()) {
+        logf("youtube: found %zu subtitle track(s) video=%s",
+             resolved_subtitles_.size(),
+             video_id->c_str());
+    }
+
     const json streaming = root->value("streamingData", json::object());
     report_status(on_status, "RESOLVING YOUTUBE STREAM", "SELECTING PLAYABLE FORMAT");
     const auto progressive_playback = build_progressive_playback(
@@ -714,6 +798,34 @@ std::optional<ResolvedPlayback> YouTubeResolver::resolve_internal(
 
     if (prefer_progressive_first && progressive_playback.has_value()) {
         return progressive_playback;
+    }
+
+    if (prefer_high_1080) {
+        report_status(on_status, "RESOLVING YOUTUBE STREAM", "REQUESTING 1080P STREAM");
+        // Only take the adaptive video+audio path when a genuine >=1080p AVC
+        // track exists; otherwise fall through to the proven 720p HLS path so
+        // sub-1080p videos aren't mislabelled or downgraded needlessly.
+        const auto video_1080 = pick_preferred_adaptive_video_format(
+            streaming.value("adaptiveFormats", json::array()), 1080);
+        const int height_1080 = video_1080.has_value() ? video_1080->value("height", 0) : 0;
+        if (height_1080 >= 1080) {
+            const auto adaptive_1080 = build_adaptive_split_playback(
+                streaming.value("adaptiveFormats", json::array()), *video_id, 1080);
+            if (adaptive_1080.has_value()) {
+                auto result = *adaptive_1080;
+                // 1080p is a video-only + external-audio stream. Fall back to the
+                // reliable progressive (ratebypass, muxed) stream if it stalls.
+                if (progressive_playback.has_value()) {
+                    result.fallback_stream_url = progressive_playback->stream_url;
+                    result.fallback_referer = progressive_playback->referer;
+                    result.fallback_http_header_fields = progressive_playback->http_header_fields;
+                    result.fallback_quality_label = progressive_playback->quality_label;
+                }
+                return result;
+            }
+        }
+        logf("youtube: 1080p adaptive unavailable video=%s (max height=%d), falling back to 720p",
+             video_id->c_str(), height_1080);
     }
 
     if (allow_adaptive_720) {

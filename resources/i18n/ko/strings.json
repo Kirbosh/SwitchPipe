@@ -39,6 +39,7 @@
   },
   "search": {
     "action": "검색",
+    "global_action": "검색",
     "ime_title": "검색어 입력",
     "ime_subtitle": "영상 또는 채널",
     "prompt": "X 버튼으로 검색",
@@ -105,6 +106,7 @@
       "saved": "재생 품질 설정을 저장했습니다",
       "options": {
         "standard": "표준 720p",
+        "high": "고화질 1080p",
         "compatibility": "호환성 우선",
         "data_saver": "데이터 절약"
       }
@@ -176,7 +178,20 @@
     "comments_load_failed": "댓글을 불러오지 못했습니다",
     "favorite_save_failed": "즐겨찾기 저장 실패",
     "favorite_added": "즐겨찾기에 추가했습니다",
-    "favorite_removed": "즐겨찾기에서 제거했습니다"
+    "favorite_removed": "즐겨찾기에서 제거했습니다",
+    "like_action": "좋아요",
+    "subscribe_action": "구독",
+    "post_comment_action": "댓글 작성",
+    "account": {
+      "sign_in_required": "먼저 로그인하세요: 설정 ▸ 로그인 세션",
+      "action_failed": "요청 실패. 다시 시도하세요.",
+      "liked": "좋아요를 눌렀습니다",
+      "subscribed": "구독했습니다",
+      "comment_posted": "댓글을 등록했습니다",
+      "no_channel": "이 영상의 채널을 찾지 못했습니다",
+      "comment_ime_title": "댓글 작성",
+      "comment_ime_subtitle": "로그인한 계정으로 등록됩니다"
+    }
   },
   "feed": {
     "subtitle": "A 재생 • Y 상세 • B 뒤로"
@@ -196,7 +211,7 @@
       "playing": "재생 중",
       "volume": "볼륨"
     },
-    "osd_controls": "A 일시정지  B 뒤로  X Y OSD  위 아래 볼륨",
+    "osd_controls": "A 종료  B 일시정지  X Y OSD  + 메뉴  위 아래 볼륨",
     "osd": {
       "auto": "OSD 자동",
       "locked": "OSD 고정",
@@ -204,6 +219,21 @@
       "audio_attach_failed": "오디오 연결 실패",
       "playback_ready": "재생 준비 완료",
       "volume": "볼륨 {}"
+    },
+    "menu": {
+      "title": "재생 설정",
+      "subtitles": "자막",
+      "audio_track": "오디오 트랙",
+      "quality": "화질",
+      "close": "닫기",
+      "off": "끄기",
+      "on": "켜기",
+      "none": "없음",
+      "auto": "자동",
+      "no_subtitles": "사용할 수 있는 자막이 없습니다",
+      "quality_locked": "다른 화질이 없습니다",
+      "switch_lower": "전환",
+      "hint": "위 아래 이동   A 선택   + 닫기"
     },
     "loading": {
       "preparing_playback": "재생 준비 중",
@@ -233,7 +263,8 @@
       "contacting_player_api": "플레이어 API 연결 중",
       "selecting_playable_format": "재생 가능한 포맷 선택 중",
       "requesting_720p_hls_stream": "720P HLS 스트림 요청 중",
-      "requesting_720p_avc_stream": "720P AVC 스트림 요청 중"
+      "requesting_720p_avc_stream": "720P AVC 스트림 요청 중",
+      "requesting_1080p_stream": "1080P 스트림 요청 중"
     }
   },
   "stream": {

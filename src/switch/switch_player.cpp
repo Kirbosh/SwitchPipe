@@ -61,6 +61,9 @@ std::string translate_loading_text(const std::string& value) {
     if (value == "REQUESTING 720P AVC STREAM") {
         return newpipe::tr("player/loading/requesting_720p_avc_stream");
     }
+    if (value == "REQUESTING 1080P STREAM") {
+        return newpipe::tr("player/loading/requesting_1080p_stream");
+    }
     return value;
 }
 
@@ -740,6 +743,187 @@ private:
         force_redraw = true;
     }
 
+    static constexpr int kMenuRowCount = 4;
+
+    void toggle_menu(bool& force_redraw) {
+        if (!first_frame_rendered_) {
+            return;
+        }
+        menu_open_ = !menu_open_;
+        if (menu_open_) {
+            menu_index_ = 0;
+        }
+        force_redraw = true;
+    }
+
+    void menu_move(int delta, bool& force_redraw) {
+        menu_index_ = (menu_index_ + kMenuRowCount + delta) % kMenuRowCount;
+        force_redraw = true;
+    }
+
+    void menu_activate(bool& running, bool& force_redraw) {
+        switch (menu_index_) {
+            case 0:
+                cycle_subtitle(force_redraw);
+                break;
+            case 1:
+                cycle_audio(force_redraw);
+                break;
+            case 2:
+                switch_quality(running, force_redraw);
+                break;
+            case 3:
+            default:
+                menu_open_ = false;
+                force_redraw = true;
+                break;
+        }
+    }
+
+    void ensure_subtitles_loaded() {
+        if (subtitles_loaded_ || subtitle_tracks_.empty() || !mpv_) {
+            return;
+        }
+
+        subtitle_count_ = 0;
+        for (const auto& track : subtitle_tracks_) {
+            if (track.url.empty()) {
+                continue;
+            }
+            const std::string title = track.language_code.empty() ? track.display_name : track.language_code;
+            const char* command[] = {
+                "sub-add", track.url.c_str(), "auto", title.c_str(), track.language_code.c_str(), nullptr};
+            mpv_command_async(mpv_, 0, command);
+            subtitle_count_++;
+        }
+        subtitles_loaded_ = true;
+        logf("player: queued %d subtitle track(s)", subtitle_count_);
+    }
+
+    void cycle_subtitle(bool& force_redraw) {
+        if (subtitle_tracks_.empty() || (subtitle_count_ == 0 && subtitles_loaded_)) {
+            show_osd_message(newpipe::tr("player/menu/no_subtitles"), 2200);
+            return;
+        }
+        if (!mpv_) {
+            return;
+        }
+
+        ensure_subtitles_loaded();
+        if (subtitle_count_ == 0) {
+            show_osd_message(newpipe::tr("player/menu/no_subtitles"), 2200);
+            return;
+        }
+
+        // mpv assigns sids 1..N in add order; 0 represents "off".
+        subtitle_sid_ = (subtitle_sid_ + 1) % (subtitle_count_ + 1);
+        if (subtitle_sid_ == 0) {
+            const char* command[] = {"set", "sid", "no", nullptr};
+            mpv_command(mpv_, command);
+            show_osd_message(
+                newpipe::tr("player/menu/subtitles") + " " + newpipe::tr("player/menu/off"), 2200);
+        } else {
+            const std::string sid = std::to_string(subtitle_sid_);
+            const char* command[] = {"set", "sid", sid.c_str(), nullptr};
+            mpv_command(mpv_, command);
+            const size_t idx = static_cast<size_t>(subtitle_sid_ - 1);
+            const std::string label = idx < subtitle_tracks_.size()
+                ? subtitle_tracks_[idx].language_code
+                : sid;
+            show_osd_message(
+                newpipe::tr("player/menu/subtitles") + " " + uppercase_ascii(label), 2200);
+        }
+        force_redraw = true;
+    }
+
+    void cycle_audio(bool& force_redraw) {
+        if (!mpv_) {
+            return;
+        }
+        const char* command[] = {"cycle", "aid", nullptr};
+        mpv_command(mpv_, command);
+        show_osd_message(newpipe::tr("player/menu/audio_track"), 2200);
+        force_redraw = true;
+    }
+
+    void switch_quality(bool& running, bool& force_redraw) {
+        if (fallback_attempted_ || fallback_url_.empty()) {
+            show_osd_message(newpipe::tr("player/menu/quality_locked"), 2400);
+            return;
+        }
+
+        menu_open_ = false;
+        std::string error;
+        if (!retry_with_fallback(error) && !error.empty()) {
+            terminal_error_ = error;
+            running = false;
+        }
+        force_redraw = true;
+    }
+
+    std::string subtitle_state_label() const {
+        if (subtitle_tracks_.empty()) {
+            return newpipe::tr("player/menu/none");
+        }
+        if (subtitle_sid_ <= 0) {
+            return newpipe::tr("player/menu/off");
+        }
+        const size_t idx = static_cast<size_t>(subtitle_sid_ - 1);
+        return idx < subtitle_tracks_.size() ? subtitle_tracks_[idx].language_code
+                                             : newpipe::tr("player/menu/on");
+    }
+
+    std::vector<std::string> build_menu_rows() const {
+        std::vector<std::string> rows;
+        rows.push_back(
+            newpipe::tr("player/menu/subtitles") + ": " + uppercase_ascii(subtitle_state_label()));
+        rows.push_back(newpipe::tr("player/menu/audio_track"));
+        const std::string quality = active_quality_label_.empty()
+            ? newpipe::tr("player/menu/auto")
+            : uppercase_ascii(active_quality_label_);
+        std::string quality_row = newpipe::tr("player/menu/quality") + ": " + quality;
+        if (!fallback_attempted_ && !fallback_quality_label_.empty()) {
+            quality_row += " (" + uppercase_ascii(newpipe::tr("player/menu/switch_lower")) + ")";
+        }
+        rows.push_back(quality_row);
+        rows.push_back(newpipe::tr("player/menu/close"));
+        return rows;
+    }
+
+    void render_menu(int width, int height) {
+        const auto rows = build_menu_rows();
+        const int row_h = std::max(38, height / 12);
+        const int panel_w = std::min(width - 80, std::max(width * 3 / 5, 520));
+        const int panel_h = row_h * static_cast<int>(rows.size()) + 96;
+        const int panel_x = (width - panel_w) / 2;
+        const int panel_y = (height - panel_h) / 2;
+
+        fill_rect(panel_x, panel_y, panel_w, panel_h, height, 0.06f, 0.06f, 0.06f);
+
+        const int title_scale = std::max(2, height / 280);
+        draw_text_line(
+            panel_x + 26, panel_y + 22, title_scale, height,
+            uppercase_ascii(newpipe::tr("player/menu/title")), 0.96f, 0.96f, 0.96f);
+
+        const int row_scale = std::max(2, height / 340);
+        for (size_t i = 0; i < rows.size(); i++) {
+            const int row_y = panel_y + 64 + static_cast<int>(i) * row_h;
+            const bool selected = static_cast<int>(i) == menu_index_;
+            if (selected) {
+                fill_rect(panel_x + 14, row_y - 6, panel_w - 28, row_h - 6, height, 0.18f, 0.14f, 0.10f);
+            }
+            draw_text_line(
+                panel_x + 30, row_y, row_scale, height, uppercase_ascii(rows[i]),
+                selected ? 1.0f : 0.82f,
+                selected ? 0.86f : 0.82f,
+                selected ? 0.40f : 0.82f);
+        }
+
+        draw_text_line(
+            panel_x + 26, panel_y + panel_h - 30, std::max(1, height / 440), height,
+            uppercase_ascii(newpipe::tr("player/menu/hint")), 0.62f, 0.62f, 0.62f);
+    }
+
     void render_playback_osd(int width, int height) {
         refresh_osd_snapshot();
         if (!should_draw_osd()) {
@@ -908,6 +1092,9 @@ private:
         fallback_http_header_fields_ = resolved->fallback_http_header_fields;
         fallback_quality_label_ = resolved->fallback_quality_label;
         fallback_external_audio_url_ = resolved->fallback_external_audio_url;
+        subtitle_tracks_ = resolved->subtitles;
+        subtitles_loaded_ = false;
+        subtitle_sid_ = 0;
         active_is_live_ = resolved->is_live;
         if (!resolved->playlist_body.empty()) {
 #ifdef __SWITCH__
@@ -1870,6 +2057,10 @@ private:
         active_external_audio_url_ = fallback_external_audio_url_;
         pending_external_audio_attach_ = false;
         active_is_live_ = false;
+        // mpv is recreated below, so re-arm subtitle loading for the new handle.
+        subtitles_loaded_ = false;
+        subtitle_count_ = 0;
+        subtitle_sid_ = 0;
 
         if (!start_stream_bridge_if_needed(error)) {
             return false;
@@ -1958,7 +2149,7 @@ private:
                 continue;
             }
 
-            bool should_render = force_redraw || frame_ready || paused || osd_pinned_ || is_temporary_osd_visible();
+            bool should_render = force_redraw || frame_ready || paused || osd_pinned_ || menu_open_ || is_temporary_osd_visible();
             if (should_render) {
                 render_frame();
                 force_redraw = paused;
@@ -1974,6 +2165,10 @@ private:
     void handle_controller_button(Uint8 button, bool& running, bool& paused, bool& force_redraw) {
         if (std::chrono::steady_clock::now() < player_input_ready_at_) {
             logf("player: ignored early controller button=%u", static_cast<unsigned int>(button));
+            return;
+        }
+        if (menu_open_) {
+            handle_menu_controller_button(button, running, force_redraw);
             return;
         }
         if (!first_frame_rendered_ && button == SDL_CONTROLLER_BUTTON_A) {
@@ -1992,6 +2187,9 @@ private:
             case SDL_CONTROLLER_BUTTON_Y:
                 toggle_osd(force_redraw);
                 break;
+            case SDL_CONTROLLER_BUTTON_START:
+                toggle_menu(force_redraw);
+                break;
             case SDL_CONTROLLER_BUTTON_DPAD_UP:
                 change_volume(5, force_redraw);
                 break;
@@ -2003,9 +2201,51 @@ private:
         }
     }
 
+    void handle_menu_controller_button(Uint8 button, bool& running, bool& force_redraw) {
+        // On Switch, SDL_CONTROLLER_BUTTON_B is the physical right button
+        // (Nintendo A / confirm) and SDL_CONTROLLER_BUTTON_A is the bottom
+        // button (Nintendo B / back), matching this player's exit/pause mapping.
+        switch (button) {
+            case SDL_CONTROLLER_BUTTON_DPAD_UP:
+                menu_move(-1, force_redraw);
+                break;
+            case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+                menu_move(1, force_redraw);
+                break;
+            case SDL_CONTROLLER_BUTTON_B:
+                menu_activate(running, force_redraw);
+                break;
+            case SDL_CONTROLLER_BUTTON_A:
+            case SDL_CONTROLLER_BUTTON_START:
+                menu_open_ = false;
+                force_redraw = true;
+                break;
+            default:
+                break;
+        }
+    }
+
     void handle_joy_button(Uint8 button, bool& running, bool& paused, bool& force_redraw) {
         if (std::chrono::steady_clock::now() < player_input_ready_at_) {
             logf("player: ignored early joystick button=%u", static_cast<unsigned int>(button));
+            return;
+        }
+        // Plus (button 10 in libnx's SDL mapping) opens the in-player menu.
+        // Button 1 is Nintendo A (confirm), button 0 is Nintendo B (back),
+        // mirroring the exit/pause mapping used during normal playback.
+        if (menu_open_) {
+            switch (button) {
+                case 1:
+                    menu_activate(running, force_redraw);
+                    break;
+                case 0:
+                case 10:
+                    menu_open_ = false;
+                    force_redraw = true;
+                    break;
+                default:
+                    break;
+            }
             return;
         }
         if (!first_frame_rendered_ && button == 0) {
@@ -2024,6 +2264,9 @@ private:
             case 3:
                 toggle_osd(force_redraw);
                 break;
+            case 10:
+                toggle_menu(force_redraw);
+                break;
             case 13:
                 change_volume(5, force_redraw);
                 break;
@@ -2036,6 +2279,14 @@ private:
     }
 
     void handle_hat(Uint8 hat_value, bool& force_redraw) {
+        if (menu_open_) {
+            if (hat_value & SDL_HAT_UP) {
+                menu_move(-1, force_redraw);
+            } else if (hat_value & SDL_HAT_DOWN) {
+                menu_move(1, force_redraw);
+            }
+            return;
+        }
         if (hat_value & SDL_HAT_UP) {
             change_volume(5, force_redraw);
         } else if (hat_value & SDL_HAT_DOWN) {
@@ -2249,6 +2500,9 @@ private:
 
         mpv_render_context_render(render_context_, params);
         render_playback_osd(width, height);
+        if (menu_open_) {
+            render_menu(width, height);
+        }
         SDL_GL_SwapWindow(window_);
         mpv_render_context_report_swap(render_context_);
     }
@@ -2335,6 +2589,12 @@ private:
     bool file_loaded_ = false;
     bool first_frame_rendered_ = false;
     bool osd_pinned_ = false;
+    std::vector<SubtitleTrack> subtitle_tracks_;
+    bool subtitles_loaded_ = false;
+    int subtitle_count_ = 0;
+    int subtitle_sid_ = 0;  // 0 == off, otherwise an mpv sid
+    bool menu_open_ = false;
+    int menu_index_ = 0;
     std::thread stream_download_thread_;
     std::string stream_cache_path_;
     std::string audio_cache_path_;

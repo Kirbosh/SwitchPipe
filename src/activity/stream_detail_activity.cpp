@@ -173,6 +173,25 @@ void StreamDetailActivity::openRelatedFeed() {
 void StreamDetailActivity::openExtrasMenu() {
     auto* dialog = new brls::Dialog(newpipe::tr("detail/extras_title"));
 
+    const bool signed_in = this->account_.is_signed_in();
+
+    dialog->addButton(newpipe::tr("detail/like_action"), [this, dialog]() {
+        dialog->close();
+        this->likeVideo();
+    });
+
+    if (signed_in && (!this->item_.channel_id.empty() || !this->item_.channel_url.empty())) {
+        dialog->addButton(newpipe::tr("detail/subscribe_action"), [this, dialog]() {
+            dialog->close();
+            this->subscribeChannel();
+        });
+    }
+
+    dialog->addButton(newpipe::tr("detail/post_comment_action"), [this, dialog]() {
+        dialog->close();
+        this->postComment();
+    });
+
     if (this->item_.url.find("list=") != std::string::npos) {
         dialog->addButton(newpipe::tr("detail/playlist_action"), [this, dialog]() {
             dialog->close();
@@ -187,6 +206,71 @@ void StreamDetailActivity::openExtrasMenu() {
     dialog->addButton(newpipe::tr("common/close"), [dialog]() { dialog->close(); });
     dialog->setCancelable(true);
     dialog->open();
+}
+
+void StreamDetailActivity::notifyAccountResult(
+    const newpipe::AccountActionResult& result,
+    const std::string& success_message) {
+    if (result.ok()) {
+        brls::Application::notify(success_message);
+        return;
+    }
+
+    if (result.status == newpipe::AccountActionStatus::NotSignedIn) {
+        brls::Application::notify(newpipe::tr("detail/account/sign_in_required"));
+        return;
+    }
+
+    brls::Application::notify(
+        result.message.empty() ? newpipe::tr("detail/account/action_failed") : result.message);
+}
+
+void StreamDetailActivity::likeVideo() {
+    if (this->item_.id.empty()) {
+        brls::Application::notify(newpipe::tr("detail/account/action_failed"));
+        return;
+    }
+
+    const auto result = this->account_.like_video(this->item_.id);
+    this->notifyAccountResult(result, newpipe::tr("detail/account/liked"));
+}
+
+void StreamDetailActivity::subscribeChannel() {
+    std::string channel_id = this->item_.channel_id;
+    if (channel_id.empty()) {
+        const auto detail = this->service_.get_stream_detail(this->item_.url);
+        if (detail.has_value()) {
+            channel_id = detail->item.channel_id;
+        }
+    }
+
+    if (channel_id.empty()) {
+        brls::Application::notify(newpipe::tr("detail/account/no_channel"));
+        return;
+    }
+
+    const auto result = this->account_.subscribe_channel(channel_id);
+    this->notifyAccountResult(result, newpipe::tr("detail/account/subscribed"));
+}
+
+void StreamDetailActivity::postComment() {
+    if (!this->account_.is_signed_in()) {
+        brls::Application::notify(newpipe::tr("detail/account/sign_in_required"));
+        return;
+    }
+
+    brls::Application::getImeManager()->openForText(
+        [this](const std::string& text) {
+            if (text.empty()) {
+                return;
+            }
+            const auto result = this->account_.post_comment(this->item_.url, text);
+            this->notifyAccountResult(result, newpipe::tr("detail/account/comment_posted"));
+        },
+        newpipe::tr("detail/account/comment_ime_title"),
+        newpipe::tr("detail/account/comment_ime_subtitle"),
+        500,
+        "");
 }
 
 void StreamDetailActivity::openPlaylistFeed() {

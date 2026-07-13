@@ -1,9 +1,10 @@
 name: Release Build
 
 on:
-  release:
-    types:
-      - published
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
 
 permissions:
@@ -40,23 +41,38 @@ jobs:
       - name: Prepare release artifacts
         run: |
           mkdir -p dist
-          cp cmake-build-switch/switch_newpipe.nro dist/switch_newpipe.nro
-          sha256sum dist/switch_newpipe.nro > dist/SHA256SUMS.txt
+          cp cmake-build-switch/switch_newpipe.nro dist/SwitchPipe.nro
+          sha256sum dist/SwitchPipe.nro > dist/SHA256SUMS.txt
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: switch-newpipe-release
+          name: switchpipe-release
           path: |
-            dist/switch_newpipe.nro
+            dist/SwitchPipe.nro
             dist/SHA256SUMS.txt
 
-      - name: Upload assets to GitHub Release
-        if: github.event_name == 'release'
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: SwitchPipe ${{ github.ref_name }}
+          body: |
+            SwitchPipe ${{ github.ref_name }} — adless YouTube client for Nintendo Switch homebrew.
+
+            Copy `SwitchPipe.nro` to `sdmc:/switch/` and launch it from the Homebrew Menu.
+
+            Highlights in this build:
+            - Up to 1080p playback (adaptive video + audio), plus 720p / compatibility / data-saver modes
+            - In-player settings menu (`+`): subtitles, audio track, on-the-fly quality
+            - Like / Subscribe / Post comment from the video details screen (sign-in required)
+            - Global search from any tab (`ZL`)
+            - Cookie sign-in from Settings ▸ Login session
+            - Faster navigation (connection reuse + detail caching)
+
+            Verify the download against `SHA256SUMS.txt`.
           files: |
-            dist/switch_newpipe.nro
+            dist/SwitchPipe.nro
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
-          overwrite_files: true
