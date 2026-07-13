@@ -22,9 +22,9 @@
 ## Install
 
 1. Make sure your Switch has **Atmosphere CFW** with the Homebrew Menu
-2. Download `switch_newpipe.nro` from the [latest release](../../releases/latest)
-3. Copy it to `sdmc:/switch/switch_newpipe.nro`
-4. Launch from the Homebrew Menu
+2. Download `SwitchPipe.nro` from the [latest release](../../releases/latest)
+3. Copy it to `sdmc:/switch/SwitchPipe.nro`
+4. Launch from the Homebrew Menu (it appears as **SwitchPipe**)
 
 ## What You Can Do
 
